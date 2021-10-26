@@ -3,6 +3,7 @@ import { InstagramSession } from "../../entities/instagramSession";
 import { IInstagramProvider } from "../IInstagramProvider";
 import axios from 'axios';
 import { FBPage } from "../../entities/page";
+import { SendMessageDTO } from "../../modules/sendMessage/sendMessageDto";
 interface IConversationResponse {
     data: Array<{ id: string }>
 }
@@ -29,17 +30,20 @@ export class InstagramProvider implements IInstagramProvider {
         console.log(conversationResponse.data);
         const conversation: { messages: {data: Array<{ id: string, created_time: string }>} } = conversationResponse.data as { messages: {data: Array<{ id: string, created_time: string }>} };
         const messages: ConversationMessage[] = await Promise.all(conversation.messages.data.map(async (x) => {
-            const messagesResponse = (await axios.get(`https://graph.facebook.com/v9.0/${x.id}`, { params: { fields: ['id', 'created_time', 'from', 'message', 'to', 'attachments'].join(','),access_token: session?.page_access_token } }));
-            console.log(messagesResponse.data);
-            return messagesResponse.data as ConversationMessage;
+            return this.getMessageInfo(session!, x.id);
         }))
         console.log(messages);
         return messages;
 
 
     }
-    sendMessage(conversationMessage: string, token: string, receiver: string): Promise<ConversationMessage> {
-        throw new Error("method not implemented")
+    async sendMessage(conversationMessage: SendMessageDTO, token: string): Promise<ConversationMessage> {
+        const session = this.getSessionByToken(token);
+        console.log(session);
+        const sendResponse = await axios.post("https://graph.facebook.com/v12.0/me/messages", conversationMessage, {params: {access_token: session?.page_access_token}});
+        const responseData: {recipient_id: string, message_id: string} = sendResponse.data as {recipient_id: string, message_id: string};
+        return this.getMessageInfo(session!, responseData.message_id);
+
     }
 
     getSessionByToken(token: string): InstagramSession | undefined {
@@ -58,6 +62,11 @@ export class InstagramProvider implements IInstagramProvider {
         const session = this.getSessionByToken(token);
         const pageData: { data: FBPage[] } = (await axios.get("https://graph.facebook.com/v9.0/me/accounts", { params: { access_token: session?.access_token } })).data as { data: FBPage[] }
         return pageData.data;
+    }
+
+    async getMessageInfo(session: InstagramSession, messageId: string): Promise<ConversationMessage> {
+        const messagesResponse = (await axios.get(`https://graph.facebook.com/v9.0/${messageId}`, { params: { fields: ['id', 'created_time', 'from', 'message', 'to', 'attachments'].join(','),access_token: session?.page_access_token } }));
+        return messagesResponse.data as ConversationMessage;
     }
 
 }
